@@ -26,7 +26,7 @@ console.log("🔍 DATABASE_URL found. Attempting to connect...");
 
 // 4. Create PostgreSQL connection pool
 const pool = new Pool({
-  connectionString: dbUrl + "?sslmode=no-verify",
+  connectionString: dbUrl,
 });
 
 // 5. Test the DB connection immediately

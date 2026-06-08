@@ -1,6 +1,6 @@
 {
-  "id": "c179c8cb-0e7d-49b7-a1d8-e06ee8a8d8b7",
-  "prevId": "6f76b032-e240-4693-bce4-512049d83f20",
+  "id": "2fd17e00-7401-45dd-81d7-fc9a36fa8f12",
+  "prevId": "c179c8cb-0e7d-49b7-a1d8-e06ee8a8d8b7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -124,6 +124,118 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.spouse_submissions": {
+      "name": "spouse_submissions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "city": {
+          "name": "city",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "spouse_name": {
+          "name": "spouse_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "permit_type": {
+          "name": "permit_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "duration_information": {
+          "name": "duration_information",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "noc_level": {
+          "name": "noc_level",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "canada_funds": {
+          "name": "canada_funds",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "india_funds": {
+          "name": "india_funds",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credits": {
+          "name": "credits",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "marriage_duration": {
+          "name": "marriage_duration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "eligibility_score": {
+          "name": "eligibility_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "submitted_at": {
+          "name": "submitted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
