@@ -10,23 +10,39 @@ export async function checkDuplicates(req: Request, res: Response) {
     const { email, phone } = req.body;
     const errors: { field: string; message: string }[] = [];
 
-    if (email) {
+    if (email && phone) {
+      const normalizedEmail = email.toLowerCase().trim();
+      const { emailExists, phoneExists } = await storage.checkSpouseSubmissionDuplicates(
+        normalizedEmail,
+        phone,
+      );
+      if (emailExists) {
+        errors.push({
+          field: "email",
+          message: "This email has already been used for a submission",
+        });
+      }
+      if (phoneExists) {
+        errors.push({
+          field: "phone",
+          message: "This phone number has already been used for a submission",
+        });
+      }
+    } else if (email) {
       const normalizedEmail = email.toLowerCase().trim();
       const existingByEmail = await storage.getSpouseSubmissionByEmail(normalizedEmail);
       if (existingByEmail) {
         errors.push({
           field: "email",
-          message: "This email has already been used for a submission"
+          message: "This email has already been used for a submission",
         });
       }
-    }
-
-    if (phone) {
+    } else if (phone) {
       const existingByPhone = await storage.getSpouseSubmissionByPhone(phone);
       if (existingByPhone) {
         errors.push({
           field: "phone",
-          message: "This phone number has already been used for a submission"
+          message: "This phone number has already been used for a submission",
         });
       }
     }
@@ -160,16 +176,15 @@ export async function createSpouseSubmission(req: Request, res: Response) {
     const normalizedEmail = validatedData.email.toLowerCase().trim();
     const errors: { field: string; message: string }[] = [];
 
-    // Duplicate checks
-    const [existingByEmail, existingByPhone] = await Promise.all([
-      storage.getSpouseSubmissionByEmail(normalizedEmail),
-      storage.getSpouseSubmissionByPhone(validatedData.phone),
-    ]);
+    const { emailExists, phoneExists } = await storage.checkSpouseSubmissionDuplicates(
+      normalizedEmail,
+      validatedData.phone,
+    );
 
-    if (existingByEmail) {
+    if (emailExists) {
       errors.push({ field: "email", message: "This email has already been used for a submission" });
     }
-    if (existingByPhone) {
+    if (phoneExists) {
       errors.push({ field: "phone", message: "This phone number has already been used for a submission" });
     }
 
@@ -177,36 +192,25 @@ export async function createSpouseSubmission(req: Request, res: Response) {
       return res.status(400).json({ errors });
     }
 
-    // Create record fast
-    const submission = await storage.createSpouseSubmission({
+    const eligibilityResult = calculateSpouseEligibilityScore({
       ...validatedData,
       email: normalizedEmail,
     });
 
-    // Calculate score
-    const eligibilityResult = calculateSpouseEligibilityScore(submission);
+    const submission = await storage.createSpouseSubmission({
+      ...validatedData,
+      email: normalizedEmail,
+      eligibilityScore: eligibilityResult.score,
+    });
 
-    // Update score (fast write)
-    await storage.updateSpouseEligibilityScore(submission.id, eligibilityResult.score);
+    sendSpouseSubmissionToGoogleSheets(submission).catch((err) => {
+      console.error("Failed to send spouse submission to Google Sheets:", err);
+    });
 
-    // RESPONSE IMMEDIATELY ✔
     res.status(201).json({
       id: submission.id,
       message: "Spouse visa submission created successfully",
     });
-
-    // BACKGROUND TASK (does NOT block) ✔
-    setTimeout(async () => {
-      try {
-        // Only fetch once → reduce DB load
-        const updated = await storage.getSpouseSubmission(submission.id);
-        if (updated) {
-          await sendSpouseSubmissionToGoogleSheets(updated);
-        }
-      } catch (err) {
-        console.error("Failed to send spouse submission to Google Sheets:", err);
-      }
-    }, 0);
 
   } catch (error: any) {
     console.error("Error creating spouse submission:", error);

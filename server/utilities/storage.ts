@@ -1,7 +1,12 @@
 import { type User, type InsertUser, type Submission, type InsertSubmission, type RefreshToken, type InsertRefreshToken, type SpouseSubmission, type InsertSpouseSubmission, type ContactMessage, type InsertContactMessage, users, submissions, refreshTokens, spouseSubmissions, contactMessages } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { eq, desc, and, lt } from "drizzle-orm";
+import { eq, desc, lt, or } from "drizzle-orm";
+
+export interface DuplicateCheckResult {
+  emailExists: boolean;
+  phoneExists: boolean;
+}
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -12,6 +17,7 @@ export interface IStorage {
   getSubmission(id: string): Promise<Submission | undefined>;
   getSubmissionByPhone(phone: string): Promise<Submission | undefined>;
   getSubmissionByEmail(email: string): Promise<Submission | undefined>;
+  checkSubmissionDuplicates(email: string, phone: string): Promise<DuplicateCheckResult>;
   createSubmission(submission: InsertSubmission): Promise<Submission>;
   updateEligibilityScore(id: string, score: number): Promise<Submission | undefined>;
   updateSubmissionStatus(id: string, status: string): Promise<Submission | undefined>;
@@ -20,6 +26,7 @@ export interface IStorage {
   getSpouseSubmission(id: string): Promise<SpouseSubmission | undefined>;
   getSpouseSubmissionByEmail(email: string): Promise<SpouseSubmission | undefined>;
   getSpouseSubmissionByPhone(phone: string): Promise<SpouseSubmission | undefined>;
+  checkSpouseSubmissionDuplicates(email: string, phone: string): Promise<DuplicateCheckResult>;
   createSpouseSubmission(submission: InsertSpouseSubmission): Promise<SpouseSubmission>;
   updateSpouseEligibilityScore(id: string, score: number): Promise<SpouseSubmission | undefined>;
 
@@ -180,6 +187,16 @@ export class MemStorage implements IStorage {
     );
   }
 
+  async checkSubmissionDuplicates(email: string, phone: string): Promise<DuplicateCheckResult> {
+    const rows = Array.from(this.submissions.values()).filter(
+      (s) => s.email === email || s.phone === phone,
+    );
+    return {
+      emailExists: rows.some((s) => s.email === email),
+      phoneExists: rows.some((s) => s.phone === phone),
+    };
+  }
+
   async createSubmission(insertSubmission: InsertSubmission): Promise<Submission> {
     const id = randomUUID();
     const submission: Submission = {
@@ -254,6 +271,16 @@ export class MemStorage implements IStorage {
     return Array.from(this.spouseSubmissionsMap.values()).find(
       (submission) => submission.phone === phone,
     );
+  }
+
+  async checkSpouseSubmissionDuplicates(email: string, phone: string): Promise<DuplicateCheckResult> {
+    const rows = Array.from(this.spouseSubmissionsMap.values()).filter(
+      (s) => s.email.toLowerCase() === email.toLowerCase() || s.phone === phone,
+    );
+    return {
+      emailExists: rows.some((s) => s.email.toLowerCase() === email.toLowerCase()),
+      phoneExists: rows.some((s) => s.phone === phone),
+    };
   }
 
   async createSpouseSubmission(insertSubmission: InsertSpouseSubmission): Promise<SpouseSubmission> {
@@ -361,15 +388,9 @@ class DbStorage implements IStorage {
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    // NOTE: Using same workaround as createSubmission - see comment there
     const id = randomUUID();
-    const userData = {
-      ...insertUser,
-      id,
-    };
-    await db.insert(users).values(userData);
-    const result = await db.select().from(users).where(eq(users.id, id));
-    return result[0];
+    const [user] = await db.insert(users).values({ ...insertUser, id }).returning();
+    return user;
   }
 
   async getSubmissions(): Promise<Submission[]> {
@@ -401,39 +422,43 @@ class DbStorage implements IStorage {
     }
   }
 
-  async createSubmission(insertSubmission: InsertSubmission): Promise<Submission> {
-    // NOTE: The neon-http driver doesn't support .returning() properly (returns empty array).
-    // Workaround: Generate UUID before insert, then query the inserted record.
-    // This is safe for single-row inserts and avoids race conditions in this context.
-    const id = randomUUID();
-    const submissionData = {
-      ...insertSubmission,
-      id,
-      submittedAt: new Date(),
+  async checkSubmissionDuplicates(email: string, phone: string): Promise<DuplicateCheckResult> {
+    const rows = await db
+      .select({ email: submissions.email, phone: submissions.phone })
+      .from(submissions)
+      .where(or(eq(submissions.email, email), eq(submissions.phone, phone)))
+      .limit(2);
+    return {
+      emailExists: rows.some((r) => r.email === email),
+      phoneExists: rows.some((r) => r.phone === phone),
     };
-    
-    await db.insert(submissions).values(submissionData);
-    
-    // Query the inserted record to return it
-    const result = await db.select().from(submissions).where(eq(submissions.id, id));
-    return result[0];
   }
 
+  async createSubmission(insertSubmission: InsertSubmission): Promise<Submission> {
+    const id = randomUUID();
+    const [submission] = await db
+      .insert(submissions)
+      .values({ ...insertSubmission, id, submittedAt: new Date() })
+      .returning();
+    return submission;
+  }
 
   async updateEligibilityScore(id: string, score: number): Promise<Submission | undefined> {
-    await db.update(submissions)
+    const [submission] = await db
+      .update(submissions)
       .set({ eligibilityScore: score })
-      .where(eq(submissions.id, id));
-    const result = await db.select().from(submissions).where(eq(submissions.id, id));
-    return result[0];
+      .where(eq(submissions.id, id))
+      .returning();
+    return submission;
   }
 
   async updateSubmissionStatus(id: string, status: string): Promise<Submission | undefined> {
-    await db.update(submissions)
+    const [submission] = await db
+      .update(submissions)
       .set({ status })
-      .where(eq(submissions.id, id));
-    const result = await db.select().from(submissions).where(eq(submissions.id, id));
-    return result[0];
+      .where(eq(submissions.id, id))
+      .returning();
+    return submission;
   }
 
   async getSpouseSubmissions(): Promise<SpouseSubmission[]> {
@@ -465,40 +490,43 @@ class DbStorage implements IStorage {
     }
   }
 
+  async checkSpouseSubmissionDuplicates(email: string, phone: string): Promise<DuplicateCheckResult> {
+    const rows = await db
+      .select({ email: spouseSubmissions.email, phone: spouseSubmissions.phone })
+      .from(spouseSubmissions)
+      .where(or(eq(spouseSubmissions.email, email), eq(spouseSubmissions.phone, phone)))
+      .limit(2);
+    return {
+      emailExists: rows.some((r) => r.email === email),
+      phoneExists: rows.some((r) => r.phone === phone),
+    };
+  }
+
   async createSpouseSubmission(insertSubmission: InsertSpouseSubmission): Promise<SpouseSubmission> {
     const id = randomUUID();
-    const submissionData = {
-      ...insertSubmission,
-      id,
-      submittedAt: new Date(),
-    };
-    
-    await db.insert(spouseSubmissions).values(submissionData);
-    
-    const result = await db.select().from(spouseSubmissions).where(eq(spouseSubmissions.id, id));
-    return result[0];
+    const [submission] = await db
+      .insert(spouseSubmissions)
+      .values({ ...insertSubmission, id, submittedAt: new Date() })
+      .returning();
+    return submission;
   }
 
   async updateSpouseEligibilityScore(id: string, score: number): Promise<SpouseSubmission | undefined> {
-    await db.update(spouseSubmissions)
+    const [submission] = await db
+      .update(spouseSubmissions)
       .set({ eligibilityScore: score })
-      .where(eq(spouseSubmissions.id, id));
-    const result = await db.select().from(spouseSubmissions).where(eq(spouseSubmissions.id, id));
-    return result[0];
+      .where(eq(spouseSubmissions.id, id))
+      .returning();
+    return submission;
   }
 
   async createRefreshToken(insertToken: InsertRefreshToken): Promise<RefreshToken> {
     const id = randomUUID();
-    const tokenData = {
-      ...insertToken,
-      id,
-      createdAt: new Date(),
-    };
-    
-    await db.insert(refreshTokens).values(tokenData);
-    
-    const result = await db.select().from(refreshTokens).where(eq(refreshTokens.id, id));
-    return result[0];
+    const [token] = await db
+      .insert(refreshTokens)
+      .values({ ...insertToken, id, createdAt: new Date() })
+      .returning();
+    return token;
   }
 
   async getRefreshToken(token: string): Promise<RefreshToken | undefined> {
@@ -525,16 +553,11 @@ class DbStorage implements IStorage {
 
   async createContactMessage(insertMessage: InsertContactMessage): Promise<ContactMessage> {
     const id = randomUUID();
-    const messageData = {
-      ...insertMessage,
-      id,
-      submittedAt: new Date(),
-    };
-    
-    await db.insert(contactMessages).values(messageData);
-    
-    const result = await db.select().from(contactMessages).where(eq(contactMessages.id, id));
-    return result[0];
+    const [message] = await db
+      .insert(contactMessages)
+      .values({ ...insertMessage, id, submittedAt: new Date() })
+      .returning();
+    return message;
   }
 }
 

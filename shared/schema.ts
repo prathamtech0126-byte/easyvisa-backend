@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -37,7 +37,10 @@ export const submissions = pgTable("submissions", {
   eligibilityScore: integer("eligibility_score"),
   status: text("status").notNull().default("pending"),
   submittedAt: timestamp("submitted_at").defaultNow(),
-});
+}, (table) => [
+  index("submissions_email_idx").on(table.email),
+  index("submissions_phone_idx").on(table.phone),
+]);
 
 export const refreshTokens = pgTable("refresh_tokens", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -64,7 +67,10 @@ export const spouseSubmissions = pgTable("spouse_submissions", {
   eligibilityScore: integer("eligibility_score"),
   status: text("status").notNull().default("pending"),
   submittedAt: timestamp("submitted_at").defaultNow(),
-});
+}, (table) => [
+  index("spouse_submissions_email_idx").on(table.email),
+  index("spouse_submissions_phone_idx").on(table.phone),
+]);
 
 export const contactMessages = pgTable("contact_messages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

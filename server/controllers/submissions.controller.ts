@@ -104,20 +104,20 @@ export async function createSubmission(req: AuthRequest, res: Response) {
     // Step 2: Normalize email
     const normalizedEmail = validatedData.email.toLowerCase().trim();
 
-    // Step 3: Duplicate checks
-    const [existingEmail, existingPhone] = await Promise.all([
-      storage.getSubmissionByEmail(normalizedEmail),
-      storage.getSubmissionByPhone(validatedData.phone)
-    ]);
+    // Step 3: Duplicate check (single DB round-trip)
+    const { emailExists, phoneExists } = await storage.checkSubmissionDuplicates(
+      normalizedEmail,
+      validatedData.phone,
+    );
 
-    if (existingEmail) {
+    if (emailExists) {
       return res.status(400).json({
         field: "email",
         message: "This email address has already been used for a submission"
       });
     }
 
-    if (existingPhone) {
+    if (phoneExists) {
       return res.status(400).json({
         field: "phone",
         message: "This phone number has already been used for a submission"
