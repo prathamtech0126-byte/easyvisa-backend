@@ -4,6 +4,7 @@
 "scripts": {
   "dev": "tsx --env-file=.env server/index.ts",
   "seed-admin": "tsx --env-file=.env server/scripts/seed-admin.ts",
+  "test:rate-limit": "tsx --env-file=.env server/scripts/rate-limit-load-test.ts",
   "build": "tsc && tsc-alias",
   "start": "node -r dotenv/config dist/server/index.js"
 },
