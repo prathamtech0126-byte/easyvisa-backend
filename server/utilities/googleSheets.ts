@@ -6,6 +6,8 @@ import type { Submission, SpouseSubmission,ContactMessage } from "./../../shared
 --------------------------------------------------------- */
 
 
+const SHEETS_SCOPE = ["https://www.googleapis.com/auth/spreadsheets"];
+
 function loadCredentials() {
   if (process.env.GOOGLE_CREDENTIALS) {
     return JSON.parse(process.env.GOOGLE_CREDENTIALS);
@@ -15,13 +17,31 @@ function loadCredentials() {
   return require("./credentials.json");
 }
 
+function loadSpouseCredentials() {
+  if (process.env.SPOUSE_GOOGLE_CREDENTIALS) {
+    return JSON.parse(process.env.SPOUSE_GOOGLE_CREDENTIALS);
+  }
+
+  // fallback to main credentials if spouse-specific ones are not set
+  return loadCredentials();
+}
+
 const auth = new google.auth.GoogleAuth({
   credentials: loadCredentials(),
-  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  scopes: SHEETS_SCOPE,
+});
+
+const spouseAuth = new google.auth.GoogleAuth({
+  credentials: loadSpouseCredentials(),
+  scopes: SHEETS_SCOPE,
 });
 
 export async function getGoogleSheetClient() {
   return google.sheets({ version: "v4", auth });
+}
+
+export async function getSpouseGoogleSheetClient() {
+  return google.sheets({ version: "v4", auth: spouseAuth });
 }
 /* ---------------------------------------------------------
    ENV VARIABLES
@@ -30,6 +50,7 @@ export async function getGoogleSheetClient() {
 const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID;
 const SPOUSE_SPREADSHEET_ID = process.env.SPOUSE_GOOGLE_SHEET_ID;
 const CONTACT_SPREADSHEET_ID = process.env.GOOGLE_CONTACT_SHEET_ID;
+const SPOUSE_SHEET_TAB = process.env.SPOUSE_GOOGLE_SHEET_TAB || "Sheet1";
 
 
 /* ---------------------------------------------------------
@@ -146,7 +167,12 @@ export async function sendSpouseSubmissionToGoogleSheets(
   submission: SpouseSubmission
 ): Promise<void> {
   try {
-    const sheets = await getGoogleSheetClient();
+    if (!SPOUSE_SPREADSHEET_ID) {
+      throw new Error("SPOUSE_GOOGLE_SHEET_ID is not configured");
+    }
+
+    const sheets = await getSpouseGoogleSheetClient();
+    const tab = SPOUSE_SHEET_TAB;
 
     const formattedDate = new Date().toLocaleDateString("en-US", {
       year: "numeric",
@@ -178,7 +204,7 @@ export async function sendSpouseSubmissionToGoogleSheets(
     // HEADER CHECK
     const headerCheck = await sheets.spreadsheets.values.get({
       spreadsheetId: SPOUSE_SPREADSHEET_ID,
-      range: "Sheet1!A1:P1",
+      range: `'${tab}'!A1:P1`,
     });
 
     const expectedHeader = "Submission Date";
@@ -211,7 +237,7 @@ export async function sendSpouseSubmissionToGoogleSheets(
 
       await sheets.spreadsheets.values.update({
         spreadsheetId: SPOUSE_SPREADSHEET_ID,
-        range: "Sheet1!A1",
+        range: `'${tab}'!A1`,
         valueInputOption: "RAW",
         requestBody: { values: headers },
       });
@@ -220,7 +246,7 @@ export async function sendSpouseSubmissionToGoogleSheets(
     // APPEND ROW
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPOUSE_SPREADSHEET_ID,
-      range: "Sheet1!A:P",
+      range: `'${tab}'!A:P`,
       valueInputOption: "RAW",
       insertDataOption: "INSERT_ROWS",
       requestBody: { values },
